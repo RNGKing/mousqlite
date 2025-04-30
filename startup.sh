@@ -26,7 +26,6 @@ log_message "Starting middle tier system" $log_path
 
 log_message "Middle tier system started" $log_path
 
-
 log_message "Starting middle tier system" $log_path
 
 log_message "Middle tier system started" $log_path
