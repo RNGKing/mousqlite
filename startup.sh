@@ -16,7 +16,7 @@ fi
 date=$(date '+%Y-%m-%d')
 log_path=$"./system_logs/$date-log.log"
 
-if [ ! -f "./system_logs/$date-log.log"]; then
+if [ ! -f "./system_logs/$date-log.log" ]; then
     echo "./system_logs/$date-log.log does not exist"
     touch "./system_logs/$date-log.log"
     echo "./system_logs/$date-log.log created"
