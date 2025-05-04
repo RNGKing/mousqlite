@@ -4,3 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+rusqlite = { version = "0.32.0", features = ["bundled"] }
+tokio-rusqlite = {version = "0.6.0"}
+tokio = {version = "1.0.0", features = ["full"]}
+tmq = "0.5.0"
+zmq = "0.10.0"
+anyhow = "1.0.98"
+futures = "0.3.31"
+mousqlite_types = { path = "../mousqlite_types"}
+pest = "2.8.0"
+pest_derive = "2.8.0"
