@@ -29,6 +29,15 @@ impl TryFrom<String> for SqlRequest {
     }
 }
 
+impl TryFrom<&str> for SqlRequest{
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        serde_json::from_str(value)
+            .context(format!("Failed to parse : {value}"))
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct RowData{
     pub row_id : u64,

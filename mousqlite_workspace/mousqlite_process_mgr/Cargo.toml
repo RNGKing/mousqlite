@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tokio = {version = "1.0.0", features = ["full"]}
+tmq = "0.5.0"
+zmq = "0.10.0"
+anyhow = "1.0.98"
+futures = "0.3.31"

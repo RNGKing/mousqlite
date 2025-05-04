@@ -1,4 +1,4 @@
-use std::ops::Not;
+use std::{collections::VecDeque, ops::{Mul, Not}};
 
 use anyhow::{Context as _, Result};
 use futures::{SinkExt, StreamExt};
@@ -7,7 +7,8 @@ use pest::Parser;
 use pest_derive::Parser;
 use rusqlite::types::ValueRef;
 use tokio_rusqlite::Connection;
-use tmq::Context;
+use tmq::{Context, Multipart};
+use zmq::Message;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -103,26 +104,23 @@ async fn execute_sql_request(req : SqlRequest, conn : &Arc<Mutex<Connection>>) -
 async fn run_database_connection(ctx : Arc<zmq::Context>, conn : Arc<Mutex<Connection>>, host : HostUrl) -> Result<()>{
     let tcp_url : TcpString = host.try_into().context("Failed to convert host string to tcp")?;
 
-    let mut dealer = tmq::dealer(ctx.as_ref()).connect(&tcp_url.0).context("Failed to bind dealer")?;
+    let mut reply = tmq::reply(ctx.as_ref()).connect(&tcp_url.0).context("Failed to bind dealer")?;
     loop {
-        let mut request = dealer.next().await
-            .context("Failed to get message from dealer, connection may be lost")?
-            .context("couldn't extract multipart message")?;
-        let identity = request.pop_front().context("Failed to get identity")?;
-        let client_id = request.pop_front()
-            .context("Failed to get client id")?;
-        let request_id = request.pop_front()
-            .context("Failed to get request_id")?;
-        let request_body = request.pop_front()
+        let (mut multipart, send_socket) = reply.recv().await
+            .context("Failed to get message from dealer, connection may be lost")?;
+        let identifier = multipart.pop_front().context("Failed to get idetifier")?;
+        let request_id = multipart.pop_front().context("Failed to get request id")?;
+        let request_body = multipart.pop_front()
             .context("Failed to get request body")?
-            .as_str()
-            .context("Failed to convert body into string")?.to_string();
-        //println!("MSG RECEIVED FROM -> CLIENT_ID : {client_id} REQUEST_ID : {request_id}");
+            .as_str().context("Failed to convert to string")?
+            .to_string();
         let cmd = SqlRequest::try_from(request_body)?;
         let sql_response = execute_sql_request(cmd, &conn).await?;
         let resp_msg = sql_response.into_zmq_response()?;
-        let response = vec![identity, client_id, request_id, resp_msg.as_str().into()];
-        dealer.send(response).await?;
+        
+        let response : VecDeque<Message> = vec![identifier, request_id, resp_msg.as_str().into()].into();
+            
+        reply = send_socket.send(Multipart::from_iter(response)).await?;
     }
 }
 
