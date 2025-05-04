@@ -104,8 +104,9 @@ async fn execute_sql_request(req : SqlRequest, conn : &Arc<Mutex<Connection>>) -
 async fn run_database_connection(ctx : Arc<zmq::Context>, conn : Arc<Mutex<Connection>>, host : HostUrl) -> Result<()>{
     let tcp_url : TcpString = host.try_into().context("Failed to convert host string to tcp")?;
 
-    let mut reply = tmq::reply(ctx.as_ref()).connect(&tcp_url.0).context("Failed to bind dealer")?;
+    let mut reply = tmq::reply(ctx.as_ref()).bind(&tcp_url.0).context("Failed to bind dealer")?;
     loop {
+        println!("Waiting for message");
         let (mut multipart, send_socket) = reply.recv().await
             .context("Failed to get message from dealer, connection may be lost")?;
         let identifier = multipart.pop_front().context("Failed to get idetifier")?;

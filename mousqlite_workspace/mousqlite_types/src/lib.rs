@@ -38,6 +38,16 @@ impl TryFrom<&str> for SqlRequest{
     }
 }
 
+impl TryInto<String> for SqlRequest {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        serde_json::to_string(&self)
+            .context("Failed to convert request type to json string")
+    }
+}
+
+
 #[derive(Deserialize, Serialize)]
 pub struct RowData{
     pub row_id : u64,

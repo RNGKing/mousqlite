@@ -498,6 +498,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
+ "mousqlite_types",
  "tmq",
  "tokio",
  "zmq",
