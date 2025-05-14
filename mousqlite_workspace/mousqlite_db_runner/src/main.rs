@@ -1,19 +1,17 @@
-use std::{collections::VecDeque, ops::{Mul, Not}};
+use std::{collections::VecDeque, ops::Not};
 
 use anyhow::{Context as _, Result};
-use futures::{SinkExt, StreamExt};
 use mousqlite_types::{ColumnData, DataRow, SqlRequest, SqlResponse};
 use pest::Parser;
 use pest_derive::Parser;
 use rusqlite::types::ValueRef;
 use tokio_rusqlite::Connection;
 use tmq::{Context, Multipart};
-use zmq::Message;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
-
-
-
+use tokio::time::timeout;
+use std::future::Future;
 #[derive(Parser)]
 #[grammar = "arg_parse_validation.pest"]
 struct ArgParser;
@@ -64,9 +62,24 @@ fn get_row_data( row : &rusqlite::Row, column_count : usize) -> std::result::Res
     Ok(row_data)
 }
 
+fn extract_multipart(mut msg :  Multipart) -> Result<(String, String, String)> {
+
+    let identifier = msg
+        .pop_front().context("Failed to extract identifier from the message")?
+        .as_str().context("Failed to convert identifier to string")?.to_string();
+    let request_id = msg.pop_front()
+        .context("Failed to get request id")?
+        .as_str()
+        .context("Failed to convert identifier as string")?.to_string();
+    let request_body = msg.pop_front()
+        .context("Failed to get request body")?
+        .as_str().context("Failed to convert to string")?.to_string();
+    let output = (identifier, request_id, request_body);
+    Ok(output)
+}
+
 async fn execute_sql_request(req : SqlRequest, conn : &Arc<Mutex<Connection>>) -> Result<SqlResponse>{
     let connection = conn.lock().await;
-
     let output = connection.call(move | conn| {
         let mut stmt = conn.prepare(&req.request)?;
         let column_metadata = stmt
@@ -94,36 +107,54 @@ async fn execute_sql_request(req : SqlRequest, conn : &Arc<Mutex<Connection>>) -
             row_data : output_vec
         })
     }).await;
-    
     match output {
         Ok(response) => Ok(response),
         Err(_) => Err(anyhow::anyhow!("Failed to get the SqlResponse from user query")),
     }
 }
 
-async fn run_database_connection(ctx : Arc<zmq::Context>, conn : Arc<Mutex<Connection>>, host : HostUrl) -> Result<()>{
-    let tcp_url : TcpString = host.try_into().context("Failed to convert host string to tcp")?;
 
-    let mut reply = tmq::reply(ctx.as_ref()).bind(&tcp_url.0).context("Failed to bind dealer")?;
+async fn retry_connection<F, Fut>(f : F) -> Result<()>
+where
+    F : Fn() -> Fut,
+    Fut : Future<Output=anyhow::Result<()>>{
     loop {
-        println!("Waiting for message");
-        let (mut multipart, send_socket) = reply.recv().await
-            .context("Failed to get message from dealer, connection may be lost")?;
-        let identifier = multipart.pop_front().context("Failed to get idetifier")?;
-        let request_id = multipart.pop_front().context("Failed to get request id")?;
-        let request_body = multipart.pop_front()
-            .context("Failed to get request body")?
-            .as_str().context("Failed to convert to string")?
-            .to_string();
-        let cmd = SqlRequest::try_from(request_body)?;
-        let sql_response = execute_sql_request(cmd, &conn).await?;
-        let resp_msg = sql_response.into_zmq_response()?;
-        
-        let response : VecDeque<Message> = vec![identifier, request_id, resp_msg.as_str().into()].into();
-            
-        reply = send_socket.send(Multipart::from_iter(response)).await?;
+        match f().await {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                println!("Error: {}", err);
+            }
+        }
     }
 }
+
+
+
+async fn run_database_connection(ctx : Arc<zmq::Context>, conn : Arc<Mutex<Connection>>, host : HostUrl) -> Result<()>{
+    let tcp_url : TcpString = host.try_into().context("Failed to convert host string to tcp")?;
+    retry_connection(async || {
+        let mut reply = tmq::reply(ctx.as_ref())
+            .set_rcvtimeo(250)
+            .bind(&tcp_url.0).context("Failed to bind dealer")?;
+        loop {
+            println!("Waiting for message");
+            let (multipart, send_socket) = reply.recv().await?;
+            let (identifier, request_id, request_body) = extract_multipart(multipart)?;
+            let sql_request = SqlRequest::try_from(request_body)?;
+            let sql_response = execute_sql_request(sql_request, &conn).await?;
+            let resp_msg = sql_response.into_zmq_response()?;
+            let response : VecDeque<zmq::Message> = vec![
+                identifier.as_str().into(),
+                request_id.as_str().into(),
+                resp_msg.as_str().into()]
+                .into();
+            reply = send_socket.send(Multipart::from_iter(response)).await?;
+        }
+    }).await
+
+
+    }
+
 
 #[tokio::main]
 async fn main()  -> Result<()> {
