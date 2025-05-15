@@ -1,0 +1,6 @@
+{ "SqlTestData" : [
+  "CREATE TABLE test_table (id integer, first_name TEXT, last_name, TEXT);",
+  "INSERT INTO test_table (id, first_name, last_name) VALUES (0, 'BRETT', 'SAMSON'), (1, 'TANYA', 'SAHOUR'), (2, 'PATRICK', 'PHILLIPS');",
+  "SELECT * FROM test_table;",
+  "SELECT first_name FROM test_table"
+]}

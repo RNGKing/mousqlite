@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, ops::Not};
 
 use anyhow::{Context as _, Result};
-use mousqlite_types::{ColumnData, DataRow, SqlRequest, SqlResponse};
+use mousqlite_types::{ColumnData, DataRow, RequestType, SqlRequest, SqlResponse};
 use pest::Parser;
 use pest_derive::Parser;
 use rusqlite::types::ValueRef;
@@ -12,6 +12,10 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 use std::future::Future;
+use std::net::SocketAddr;
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpStream;
+
 #[derive(Parser)]
 #[grammar = "arg_parse_validation.pest"]
 struct ArgParser;
@@ -113,51 +117,43 @@ async fn execute_sql_request(req : SqlRequest, conn : &Arc<Mutex<Connection>>) -
     }
 }
 
-
-async fn retry_connection<F, Fut>(f : F) -> Result<()>
-where
-    F : Fn() -> Fut,
-    Fut : Future<Output=anyhow::Result<()>>{
+async fn handle_connection(mut stream : TcpStream, addr: SocketAddr) -> Result<RequestType> {
+    println!("Message received from {}", addr);
+    let size = stream.read_i128().await?;
+    println!("Size is {}", size);
+    let mut bytes: Vec<u8> = vec![];
+    let mut buffer = [0; 1024];
+    let mut count = 0;
     loop {
-        match f().await {
-            Ok(()) => return Ok(()),
-            Err(err) => {
-                println!("Error: {}", err);
+        let n = stream.read(&mut buffer).await?;
+        bytes.extend_from_slice(&buffer);
+        count += n as i128;
+        if count >= size {
+            break;
+        }
+    }
+    RequestType::try_from(bytes)
+}
+
+async fn run_database_connection(ctx : Arc<zmq::Context>, conn : Arc<Mutex<Connection>>, host : HostUrl) -> Result<()> {
+
+    let tcp_url: TcpString = host.try_into().context("Failed to convert host string to tcp")?;
+    let tcp = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
+    loop {
+        let (stream, addr) = tcp.accept().await.context("Failed to accept connection")?;
+        match handle_connection(stream, addr).await?{
+            RequestType::Cancel => break,
+            RequestType::NetworkRequest(req) => {
+                let response = execute_sql_request(req, &conn).await?;
+                
             }
         }
     }
+    Ok(())
 }
 
-
-
-async fn run_database_connection(ctx : Arc<zmq::Context>, conn : Arc<Mutex<Connection>>, host : HostUrl) -> Result<()>{
-    let tcp_url : TcpString = host.try_into().context("Failed to convert host string to tcp")?;
-    retry_connection(async || {
-        let mut reply = tmq::reply(ctx.as_ref())
-            .set_rcvtimeo(250)
-            .bind(&tcp_url.0).context("Failed to bind dealer")?;
-        loop {
-            println!("Waiting for message");
-            let (multipart, send_socket) = reply.recv().await?;
-            let (identifier, request_id, request_body) = extract_multipart(multipart)?;
-            let sql_request = SqlRequest::try_from(request_body)?;
-            let sql_response = execute_sql_request(sql_request, &conn).await?;
-            let resp_msg = sql_response.into_zmq_response()?;
-            let response : VecDeque<zmq::Message> = vec![
-                identifier.as_str().into(),
-                request_id.as_str().into(),
-                resp_msg.as_str().into()]
-                .into();
-            reply = send_socket.send(Multipart::from_iter(response)).await?;
-        }
-    }).await
-
-
-    }
-
-
 #[tokio::main]
-async fn main()  -> Result<()> {
+async fn main() -> Result<()> {
     // parse the command line args
     let args = std::env::args().collect::<Vec<String>>();
     if args.len() != 3 {
