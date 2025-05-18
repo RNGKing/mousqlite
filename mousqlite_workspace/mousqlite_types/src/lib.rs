@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use bincode::{config, Decode, Encode};
@@ -21,8 +20,6 @@ pub enum RequestType{
     Cancel,
     NetworkRequest(SqlRequest)
 }
-
-
 
 #[derive(Deserialize, Serialize, Encode, Decode, Clone, Debug)]
 pub struct SqlRequest{
@@ -148,6 +145,5 @@ mod tests {
         let test_two = RequestType::NetworkRequest(SqlRequest::default());
         println!("{}", serde_json::to_string(&test_two).unwrap());
     }
-
-
+    
 }

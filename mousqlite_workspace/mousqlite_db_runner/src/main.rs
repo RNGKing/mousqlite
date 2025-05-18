@@ -6,12 +6,8 @@ use pest::Parser;
 use pest_derive::Parser;
 use rusqlite::types::ValueRef;
 use tokio_rusqlite::Connection;
-use tmq::{Context, Multipart};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::time::timeout;
-use std::future::Future;
 use std::net::SocketAddr;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -33,7 +29,6 @@ impl TryInto<TcpString> for HostUrl{
 } 
 
 fn try_parse_host_url(input : &String) -> Result<HostUrl>{
-
     let _ = ArgParser::parse(Rule::host_url, input.as_str())
         .context(format!("Failed to parse {}",input))?;
     Ok(HostUrl(input.to_owned()))
@@ -53,33 +48,17 @@ fn convert_valueref_to_columndata(col_data : ValueRef) -> Result<ColumnData>{
     }
 }
 
-fn get_row_data( row : &rusqlite::Row, column_count : usize) -> std::result::Result<Vec<ColumnData>, rusqlite::Error>{
+fn get_row_data( row : &rusqlite::Row, column_count : usize) -> std::result::Result<Vec<ColumnData>, rusqlite::Error> {
     let mut row_data = vec![];
-    for columm in 0 .. column_count {
-        let data = row.get_ref(columm)?;
-        let converted = match convert_valueref_to_columndata(data){
+    for column in 0..column_count {
+        let data = row.get_ref(column)?;
+        let converted = match convert_valueref_to_columndata(data) {
             Ok(col_data) => col_data,
             Err(_) => return Err(rusqlite::Error::InvalidQuery),
         };
         row_data.push(converted);
     }
     Ok(row_data)
-}
-
-fn extract_multipart(mut msg :  Multipart) -> Result<(String, String, String)> {
-
-    let identifier = msg
-        .pop_front().context("Failed to extract identifier from the message")?
-        .as_str().context("Failed to convert identifier to string")?.to_string();
-    let request_id = msg.pop_front()
-        .context("Failed to get request id")?
-        .as_str()
-        .context("Failed to convert identifier as string")?.to_string();
-    let request_body = msg.pop_front()
-        .context("Failed to get request body")?
-        .as_str().context("Failed to convert to string")?.to_string();
-    let output = (identifier, request_id, request_body);
-    Ok(output)
 }
 
 async fn execute_sql_request(req : SqlRequest, conn : &Arc<Mutex<Connection>>) -> Result<SqlResponse>{
@@ -119,15 +98,15 @@ async fn execute_sql_request(req : SqlRequest, conn : &Arc<Mutex<Connection>>) -
 
 async fn handle_connection(mut stream : TcpStream, addr: SocketAddr) -> Result<RequestType> {
     println!("Message received from {}", addr);
-    let size = stream.read_i128().await?;
+    let size = stream.read_u64().await?;
     println!("Size is {}", size);
     let mut bytes: Vec<u8> = vec![];
     let mut buffer = [0; 1024];
-    let mut count = 0;
+    let mut count :u64 = 0;
     loop {
         let n = stream.read(&mut buffer).await?;
         bytes.extend_from_slice(&buffer);
-        count += n as i128;
+        count += n as u64;
         if count >= size {
             break;
         }
@@ -135,7 +114,7 @@ async fn handle_connection(mut stream : TcpStream, addr: SocketAddr) -> Result<R
     RequestType::try_from(bytes)
 }
 
-async fn run_database_connection(ctx : Arc<zmq::Context>, conn : Arc<Mutex<Connection>>, host : HostUrl) -> Result<()> {
+async fn run_database_connection(conn : Arc<Mutex<Connection>>, host : HostUrl) -> Result<()> {
 
     let tcp_url: TcpString = host.try_into().context("Failed to convert host string to tcp")?;
     let tcp = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
@@ -145,10 +124,22 @@ async fn run_database_connection(ctx : Arc<zmq::Context>, conn : Arc<Mutex<Conne
             RequestType::Cancel => break,
             RequestType::NetworkRequest(req) => {
                 let response = execute_sql_request(req, &conn).await?;
-                
             }
         }
     }
+    Ok(())
+}
+
+
+async fn delete_file(path : &str) -> Result<()> {
+    let path = std::path::Path::new(&path);
+    tokio::fs::remove_file(path).await?;
+    Ok(())
+}
+
+async fn create_db_file(path : &str) -> Result<()> {
+    let path = std::path::Path::new(&path);
+    _ =tokio::fs::File::create(path).await.context("Failed to create file")?;
     Ok(())
 }
 
@@ -170,16 +161,16 @@ async fn main() -> Result<()> {
         return Err(anyhow::anyhow!(format!("File at: {database_url} does not exist")));
     }
 
+    let db_path = "/Users/test/projects/rust_projects/mousqlite/mousqlite_workspace/database/test.db".to_string();
+    delete_file(&db_path).await.context("Failed to delete file")?;
+    create_db_file(&db_path).await.context("Failed to create database")?;
+    
     // try to open database connection
 
     let connection = Arc::new(
         tokio::sync::Mutex::new(
             Connection::open(path).await.context("Failed to open database")?));
 
-    // try to open the zmq dealer socket
-    // poll the socket for commands
-
-    let zmq_context = Arc::new(Context::new());
     
-    run_database_connection(zmq_context, connection, host_string).await
+    run_database_connection(connection, host_string).await
 }
