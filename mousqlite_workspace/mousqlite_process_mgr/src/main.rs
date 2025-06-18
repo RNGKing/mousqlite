@@ -2,7 +2,6 @@ mod process_manager;
 
 use std::collections::VecDeque;
 use std::os::fd::IntoRawFd;
-use mousqlite_types::SqlRequest;
 use tmq::{request, Context, Multipart};
 use anyhow::{Context as _, Result, anyhow};
 use zmq::Message;

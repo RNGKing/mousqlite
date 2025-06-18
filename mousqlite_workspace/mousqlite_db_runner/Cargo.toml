@@ -11,3 +11,6 @@ anyhow = "1.0.98"
 mousqlite_types = { path = "../mousqlite_types"}
 pest = "2.8.0"
 pest_derive = "2.8.0"
+poem ="3.1.10"
+poem-openapi = { version = "5", features = ["swagger-ui"]}
+database_helpers = {path="../database_helpers"}

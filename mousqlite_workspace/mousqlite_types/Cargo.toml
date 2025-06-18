@@ -7,4 +7,5 @@ edition = "2024"
 serde = {version = "1.0.219", features=["derive"]}
 serde_json = "1.0.140"
 anyhow = "1.0.98"
-bincode = "2.0.1"
+poem-openapi = "5.1.14"
+poem = "3.1.10"

@@ -8,6 +8,7 @@
       <sourceFolder url="file://$MODULE_DIR$/mousqlite_process_mgr/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/mousqlite_types/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/mousql_tcp_tester/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/database_helpers/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = [ "mouslite_util", "mousql_tcp_tester", "mousqlite_db_runner","mousqlite_frontend", "mousqlite_process_mgr", "mousqlite_types"]
+members = [ "database_helpers", "mouslite_util", "mousql_tcp_tester", "mousqlite_db_runner","mousqlite_frontend", "mousqlite_process_mgr", "mousqlite_types"]

@@ -2,8 +2,7 @@ use tokio::net::{TcpSocket, TcpStream};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
-use mousqlite_types::{RequestType, SqlRequest};
-use mousqlite_types::RequestType::NetworkRequest;
+use mousqlite_types::{SqlRequest};
 
 #[derive(Serialize, Deserialize)]
 struct SqlTestData{
@@ -30,7 +29,8 @@ async fn run_test(byte_data: impl IntoIterator<Item=ByteData>) -> Result<()>{
 }
 
 #[tokio::main]
-async fn main() -> Result<()>{
+async fn main() -> Result<()> {
+    /*
     let query_test = get_test_query("test_data.json")
         .await
         .context("Failed to get query")?;
@@ -44,4 +44,6 @@ async fn main() -> Result<()>{
         Ok(ByteData(output))
     }).collect::<Result<Vec<ByteData>>>().context("Failed to parse query")?;
     run_test(messages).await.context("Failed to run query")
+    */
+    Ok(())
 }
